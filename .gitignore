@@ -1,0 +1,6 @@
+.venv
+build
+*.pyc
+.env
+.streamlit/secrets.toml
+data

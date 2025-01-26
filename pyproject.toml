@@ -1,0 +1,24 @@
+[project]
+name="vietchat"
+dynamic = [ "version" ]
+license = { file = "LICENSE" }
+
+[tool.poetry]
+name = "vietchat"
+version = "0.1.0"
+description = ""
+authors = ["Minh Do Boi <doboiminh@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+streamlit = "^1.41.1"
+openai = "^1.60.1"
+speechrecognition = "^3.14.1"
+google-api-python-client = "^2.159.0"
+google-cloud-speech = "^2.30.0"
+google-cloud-translate = "^3.19.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
