@@ -68,7 +68,7 @@ def show_options(message):
     if "translation" in message:
         st.markdown(f"Translation: {message['translation']}")
     if "audio" in message:
-        st.audio(message["audio"])
+        st.audio(f"{st.session_state.conversation_dir}/{message["audio"]}")
 
 
 def get_message_prompt(prompt):
@@ -98,8 +98,9 @@ def answer(prompt, language):
         response = st.write_stream(stream)
         # translation = translate(response, source_language=language, target="fr")
         st.session_state.message_id += 1
-        audio_file = f"{st.session_state.conversation_dir}/audio-{st.session_state.message_id}-assistant.wav"
-        text_to_speech(response, client, audio_file)
+        audio_file = f"audio-{st.session_state.message_id}-assistant.wav"
+        audio_file_path = f"{st.session_state.conversation_dir}/{audio_file}"
+        text_to_speech(response, client, audio_file_path)
         message = {
             "id": st.session_state.message_id,
             "role": "assistant",
@@ -117,7 +118,7 @@ def main():
     with prompt_cont:
         prompt = st.text_area("Prompt", value=st.session_state.prompt)
     with options_cont:
-        lang = st.selectbox("Language", ["vi", "en"])
+        lang = st.selectbox("Language", ["vi", "en", "fr"])
         if st.button("Load conversation"):
             load_conversation_dialog()
 
@@ -139,9 +140,10 @@ def main():
         if audio_value:
             st.session_state.message_id += 1
             Path(st.session_state.conversation_dir).mkdir(parents=True, exist_ok=True)
-            audio_file = f"{st.session_state.conversation_dir}/audio-{st.session_state.message_id}-user.wav"
-            save_bytes(audio_value, audio_file)
-            user_speech_text = speech_to_text(audio_file, client, language=lang)
+            audio_file = f"audio-{st.session_state.message_id}-user.wav"
+            audio_file_path = f"{st.session_state.conversation_dir}/{audio_file}"
+            save_bytes(audio_value, audio_file_path)
+            user_speech_text = speech_to_text(audio_file_path, client, language=lang)
 
             with st.chat_message("user"):
                 st.markdown(user_speech_text)
