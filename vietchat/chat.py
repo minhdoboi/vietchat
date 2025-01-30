@@ -6,6 +6,7 @@ import streamlit as st
 from vietchat.audio.speech_openai import speech_to_text, text_to_speech
 from vietchat.translation.translator import translate
 from pathlib import Path
+from storage import local as storage
 import os
 
 st.set_page_config(page_title="Viet chat", layout="wide")
@@ -13,8 +14,6 @@ st.set_page_config(page_title="Viet chat", layout="wide")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 llm_model = "gpt-4o-mini"
-
-root_conversation_dir = "data/conversations"
 
 
 if "messages" not in st.session_state:
@@ -25,7 +24,7 @@ if "message_id" not in st.session_state:
 
 if "conversation_dir" not in st.session_state:
     st.session_state.conversation_dir = (
-        f"{root_conversation_dir}/conversation-{datetime.now(UTC).isoformat()}"
+        f"{storage.root_conversation_dir}/conversation-{datetime.now(UTC).isoformat()}"
     )
 
 if "prompt" not in st.session_state:
@@ -35,33 +34,14 @@ You will try to answer with no more than 2 sentences."""
 
 @st.dialog("Load conversation")
 def load_conversation_dialog():
-    conversations = [
-        name
-        for name in os.listdir(root_conversation_dir)
-        if os.path.isdir(os.path.join(root_conversation_dir, name))
-    ]
+    conversations = storage.list_conversations()
     conversation = st.selectbox("Select conversation", conversations)
     if st.button("Load"):
-        st.session_state.conversation_dir = f"{root_conversation_dir}/{conversation}"
-        with open(f"{st.session_state.conversation_dir}/conversation.json", "r") as f:
-            conversation_content = json.load(f)
-            st.session_state.messages = conversation_content["messages"]
-            st.session_state.prompt = conversation_content["prompt"]
+        conversation_content, conversation_dir = storage.load_conversation(conversation)
+        st.session_state.conversation_dir = conversation_dir
+        st.session_state.messages = conversation_content["messages"]
+        st.session_state.prompt = conversation_content["prompt"]
         st.rerun()
-
-
-def dump_conversation():
-    with open(f"{st.session_state.conversation_dir}/conversation.json", "w", encoding='utf8') as f:
-        conversation_content = {
-          "prompt" : st.session_state.prompt,
-          "messages": st.session_state.messages
-        }
-        json.dump(conversation_content, f, ensure_ascii=False, indent=2)
-
-
-def save_bytes(data: BytesIO, file_path: str):
-    with open(file_path, "wb") as file:
-        file.write(data.getbuffer())
 
 
 def show_options(message):
@@ -110,10 +90,10 @@ def answer(prompt, language):
         }
         show_options(message)
         st.session_state.messages.append(message)
-        dump_conversation()
+        storage.dump_conversation(prompt, st.session_state.messages, st.session_state.conversation_dir)
 
 
-def main():
+def settings_panel():
     prompt_cont, options_cont = st.columns([5, 1])
     with prompt_cont:
         prompt = st.text_area("Prompt", value=st.session_state.prompt)
@@ -121,7 +101,10 @@ def main():
         lang = st.selectbox("Language", ["vi", "en", "fr"])
         if st.button("Load conversation"):
             load_conversation_dialog()
+    return prompt, lang
 
+def main():
+    prompt, lang = settings_panel()
     with st.container(border=True):
         st.write("Conversation")
         for message in st.session_state.messages:
@@ -142,8 +125,8 @@ def main():
             Path(st.session_state.conversation_dir).mkdir(parents=True, exist_ok=True)
             audio_file = f"audio-{st.session_state.message_id}-user.wav"
             audio_file_path = f"{st.session_state.conversation_dir}/{audio_file}"
-            save_bytes(audio_value, audio_file_path)
-            user_speech_text = speech_to_text(audio_file_path, client, language=lang)
+            storage.save_bytes(audio_value, audio_file_path)
+            user_speech_text = speech_to_text(audio_file_path, client, language=lang, prompt=prompt)
 
             with st.chat_message("user"):
                 st.markdown(user_speech_text)

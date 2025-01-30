@@ -1,11 +1,14 @@
-def speech_to_text(audio_file, client, language):
+def speech_to_text(audio_file, client, language, prompt):
     """
     cf https://platform.openai.com/docs/api-reference/audio/createSpeech
     """
 
     with open(audio_file, "rb") as file:
         transcription = client.audio.transcriptions.create(
-            model="whisper-1", file=file, language=language
+            model="whisper-1",
+            file=file,
+            language=language,
+            prompt=prompt,
         )
         return transcription.text
 
