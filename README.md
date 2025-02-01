@@ -1,5 +1,12 @@
 # Stupid bot for speaking vietnamese
 
+## Usage
+
+* write a situation in the prompt
+* discuss a bit with the bot
+* go speak with real vietnamese people
+* fail
+
 ## Install
 
 ```

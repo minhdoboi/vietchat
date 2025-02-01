@@ -5,9 +5,14 @@ import json
 root_conversation_dir = "data/conversations"
 
 
-def dump_conversation(prompt, messages, conversation_dir):
+def dump_conversation(prompt, messages, voice, language, conversation_dir):
     with open(f"{conversation_dir}/conversation.json", "w", encoding="utf8") as f:
-        conversation_content = {"prompt": prompt, "messages": messages}
+        conversation_content = {
+            "prompt": prompt,
+            "messages": messages,
+            "voice": voice,
+            "language": language,
+        }
         json.dump(conversation_content, f, ensure_ascii=False, indent=2)
 
 
