@@ -11,7 +11,7 @@ authors = ["Minh Do Boi <doboiminh@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.12,<3.13"
 streamlit = "^1.41.1"
 openai = "^1.60.1"
 google-api-python-client = "^2.159.0"
@@ -19,6 +19,12 @@ google-cloud-speech = "^2.30.0"
 pydub = "^0.25.1"
 gtts = "^2.5.4"
 googletrans = "^4.0.2"
+groq = "^0.16.0"
+python-dotenv = "^1.0.1"
+arize-phoenix-otel = "^0.7.1"
+openinference-instrumentation-groq = "^0.1.5"
+openinference-instrumentation-openai = "^0.1.18"
+elevenlabs = "^1.50.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"

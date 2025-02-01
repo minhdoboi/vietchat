@@ -1,5 +1,7 @@
 # Stupid bot for speaking vietnamese
 
+A bot using OpenAI or Groq to speak vietnamese
+
 ## Usage
 
 * write a situation in the prompt
@@ -13,7 +15,8 @@
 poetry install
 ```
 
-copy `example.secrets.toml` to a `.streamlit/secrets.toml` and fill the config.
+copy `example.secrets.toml` to `.streamlit/secrets.toml` and fill the config.
+copy `example.env` to `.env` and fill the config.
 
 
 ## Run

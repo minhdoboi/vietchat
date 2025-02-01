@@ -1,31 +1,22 @@
 import asyncio
 from datetime import datetime, UTC
 import os
-from openai import OpenAI
+from pathlib import Path
 import streamlit as st
-from vietchat.audio import audio_utils, speech_basic
-from vietchat.audio.speech_openai import speech_to_text, text_to_speech
+from vietchat.ai_provider import AIProvider
+from vietchat.audio import audio_utils
+from vietchat.audio.base import Voice
 from vietchat.settings import Settings
 from vietchat.translation.translator import translate_text
-from pathlib import Path
-from storage import local as storage
+from vietchat.storage import local as storage
+from vietchat.utils import logger
 
 st.set_page_config(page_title="Viet chat", layout="wide")
 
 langs = ["vi", "en", "fr"]
-voices = [
-    "gtts",
-    "alloy",
-    "ash",
-    "coral",
-    "echo",
-    "fable",
-    "onyx",
-    "nova",
-    "sage",
-    "shimmer",
-]
 depths = [1, 2, 3, 4]
+default_prompt = """You are a vietnamese speaker making a conversation with a friend in vietnamese.
+You will try to answer with no more than 2 sentences."""
 
 if "settings" not in st.session_state:
     st.session_state.settings = Settings()
@@ -36,14 +27,19 @@ if "messages" not in st.session_state:
 if "message_id" not in st.session_state:
     st.session_state.message_id = 0
 
-if "conversation_dir" not in st.session_state:
+if "voices" not in st.session_state:
+    st.session_state.voices = ["gtts"]
+
+def init_conversation_dir():
     st.session_state.conversation_dir = (
         f"{storage.root_conversation_dir}/conversation-{datetime.now(UTC).isoformat()}"
     )
 
+if "conversation_dir" not in st.session_state:
+    init_conversation_dir()
+
 if "prompt" not in st.session_state:
-    st.session_state.prompt = """You are a vietnamese speaker making a conversation with a friend in vietnamese.
-You will try to answer with no more than 2 sentences."""
+    st.session_state.prompt = default_prompt
 
 
 @st.dialog("Load conversation")
@@ -55,8 +51,14 @@ def load_conversation_dialog():
         st.session_state.conversation_dir = conversation_dir
         st.session_state.messages = conversation_content["messages"]
         st.session_state.prompt = conversation_content["prompt"]
-        st.session_state.voice = conversation_content.get("voice")
-        st.session_state.select_voice = conversation_content.get("voice")
+        st.session_state.select_voice = next(
+            (
+                voice
+                for voice in st.session_state.voices
+                if conversation_content.get("voice") == voice.id
+            ),
+            None,
+        )
         st.session_state.select_lang = conversation_content.get("language")
         st.rerun()
 
@@ -69,30 +71,34 @@ def show_message_additional_content(message):
         st.audio(f"{st.session_state.conversation_dir}/{message["audio"]}")
 
 
-def get_message_prompt(prompt):
-    return {
-        "role": "developer",
-        "content": [
-            {
-                "type": "text",
-                "text": prompt,
-            }
-        ],
-    }
+def get_message_prompt(prompt, settings: Settings):
+    if settings.main_provider == "openai":
+        return {
+            "role": "developer",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt,
+                }
+            ],
+        }
+    else:
+        return {
+            "role": "system",
+            "content": prompt,
+        }
 
 
-def answer(prompt, language, voice, depth, client, settings):
+def answer(
+    prompt, language, voice: Voice, depth, ai_provider: AIProvider, settings: Settings
+):
     with st.chat_message("assistant"):
-        context = [get_message_prompt(prompt)] + [
+        context = [get_message_prompt(prompt, settings)] + [
             {"role": m["role"], "content": m["content"]}
             for m in st.session_state.messages[-depth:]
         ]
-        print(context)
-        stream = client.chat.completions.create(
-            model=settings.llm_model,
-            messages=context,
-            stream=True,
-        )
+        logger.info("context %s", context)
+        stream = ai_provider.text.get_completions_stream(context)
         response = st.write_stream(stream)
         translation = asyncio.run(
             translate_text(
@@ -102,12 +108,11 @@ def answer(prompt, language, voice, depth, client, settings):
             )
         )
         st.session_state.message_id += 1
-        audio_file = f"audio-{st.session_state.message_id}-assistant.wav"
+        audio_file = f"audio-{st.session_state.message_id}-assistant.mp3"
         audio_file_path = f"{st.session_state.conversation_dir}/{audio_file}"
-        if voice == "gtts":
-            speech_basic.text_to_speech(response, audio_file_path, lang=language)
-        else:
-            text_to_speech(response, client, audio_file_path, voice=voice)
+        ai_provider.tts[voice.provider].text_to_speech(
+            response, audio_file_path, voice_id=voice.id, lang=language
+        )
         message = {
             "id": st.session_state.message_id,
             "role": "assistant",
@@ -120,11 +125,17 @@ def answer(prompt, language, voice, depth, client, settings):
         storage.dump_conversation(
             prompt,
             st.session_state.messages,
-            voice,
+            voice.id,
             language,
             st.session_state.conversation_dir,
         )
 
+def get_voice_order(voice: Voice):
+    if voice.provider == "gtts":
+        return ""
+    else:
+        return voice.provider + voice.name
+        
 
 def settings_panel():
     prompt_cont, options_cont, options_2_cont, action_cont = st.columns([4, 1, 1, 1])
@@ -132,24 +143,44 @@ def settings_panel():
         prompt = st.text_area("Prompt", value=st.session_state.prompt)
     with options_cont:
         lang = st.selectbox("Language", langs, key="select_lang")
-        voice = st.selectbox("Voice", voices, key="select_voice")
+        voice = st.selectbox(
+            "Voice",
+            options=sorted(st.session_state.voices, key=get_voice_order),
+            key="select_voice",
+            format_func=lambda voice: voice.provider + "-" + voice.name,
+        )
     with options_2_cont:
         user_voice_context = st.selectbox(
             "user voice context", ["prompt", "first message", "last message"]
         )
         depth = st.selectbox("context depth", [1, 2, 3, 4], index=1)
     with action_cont:
+        if st.button("New conversation"):
+            st.session_state.message_id = 0
+            st.session_state.messages = []
+            init_conversation_dir()
+            st.session_state.prompt = default_prompt
         if st.button("Load conversation"):
             load_conversation_dialog()
-        api_key = st.text_input("API key")
-    return prompt, lang, voice, depth, user_voice_context, api_key
+    return prompt, lang, voice, depth, user_voice_context
+
+
+def get_api_key(settings: Settings):
+    return settings.provider_settings[settings.main_provider].api_key
 
 
 def main():
     settings = st.session_state.settings
-    prompt, lang, voice, depth, user_voice_context, api_key = settings_panel()
-    if (settings.openai_api_key or api_key) and "client" not in st.session_state:
-        st.session_state.client = OpenAI(api_key=settings.openai_api_key or api_key)
+
+    if "ai_provider" not in st.session_state:
+        ai_provider = AIProvider(settings)
+        st.session_state.ai_provider = ai_provider
+        st.session_state.voices = ai_provider.tts_voices
+    else:
+        ai_provider: AIProvider = st.session_state.ai_provider
+
+    prompt, lang, voice, depth, user_voice_context = settings_panel()
+
     with st.container(border=True):
         st.write("Conversation")
         for message in st.session_state.messages:
@@ -160,7 +191,7 @@ def main():
             st.session_state.messages
             and st.session_state.messages[-1]["role"] == "user"
         ):
-            answer(prompt, lang, voice, depth, st.session_state.client, settings)
+            answer(prompt, lang, voice, depth, ai_provider, settings)
 
     with st.container(border=True):
         audio_value = st.audio_input("Record a voice message")
@@ -173,7 +204,7 @@ def main():
             storage.save_bytes(audio_value, audio_file_path)
             _, trimmed_audio_file_path = audio_utils.trim_start(audio_file_path)
             os.remove(audio_file_path)
-            
+
             hint = prompt
             if st.session_state.messages:
                 if user_voice_context == "first message":
@@ -181,24 +212,27 @@ def main():
                 if user_voice_context == "last message":
                     hint = st.session_state.messages[-1]["content"]
 
-            if "client" not in st.session_state:
+            if not ai_provider:
                 st.write("Please provide an API key to use the assistant")
             else:
-                user_speech_text = speech_to_text(
-                    trimmed_audio_file_path, st.session_state.client, language=lang, prompt=hint
+                user_speech_text = ai_provider.speechtt.speech_to_text(
+                    trimmed_audio_file_path, language=lang, prompt=hint
                 )
 
-                user_message = st.text_input(label="Your message", value=user_speech_text)
-
-                if st.button("submit"):
-                    st.session_state.messages.append(
-                        {
-                            "id": st.session_state.message_id,
-                            "role": "user",
-                            "content": user_message,
-                        }
+                with st.form(key="user_message"):
+                    user_message = st.text_input(
+                        label="Your message", value=user_speech_text
                     )
-                    st.rerun()
+
+                    if st.form_submit_button("submit"):
+                        st.session_state.messages.append(
+                            {
+                                "id": st.session_state.message_id,
+                                "role": "user",
+                                "content": user_message,
+                            }
+                        )
+                        st.rerun()
 
 
 main()
