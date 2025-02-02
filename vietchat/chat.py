@@ -3,6 +3,7 @@ from datetime import datetime, UTC
 import os
 from pathlib import Path
 import streamlit as st
+from vietchat import utils
 from vietchat.ai_provider import AIProvider
 from vietchat.audio import audio_utils
 from vietchat.audio.base import Voice
@@ -30,10 +31,12 @@ if "message_id" not in st.session_state:
 if "voices" not in st.session_state:
     st.session_state.voices = ["gtts"]
 
+
 def init_conversation_dir():
     st.session_state.conversation_dir = (
         f"{storage.root_conversation_dir}/conversation-{datetime.now(UTC).isoformat()}"
     )
+
 
 if "conversation_dir" not in st.session_state:
     init_conversation_dir()
@@ -63,12 +66,12 @@ def load_conversation_dialog():
         st.rerun()
 
 
-def show_message_additional_content(message):
+def show_message_additional_content(message, autoplay=False):
     if "translation" in message:
         with st.expander("translation"):
             st.markdown(f"Translation: {message['translation']}")
     if "audio" in message:
-        st.audio(f"{st.session_state.conversation_dir}/{message["audio"]}")
+        st.audio(f"{st.session_state.conversation_dir}/{message["audio"]}", autoplay=autoplay)
 
 
 def get_message_prompt(prompt, settings: Settings):
@@ -99,7 +102,7 @@ def answer(
         ]
         logger.info("context %s", context)
         stream = ai_provider.text.get_completions_stream(context)
-        response = st.write_stream(stream)
+        think, response = utils.extract_think(st.write_stream(stream))
         translation = asyncio.run(
             translate_text(
                 response,
@@ -119,8 +122,9 @@ def answer(
             "content": response,
             "translation": translation,
             "audio": audio_file,
+            "think": think,
         }
-        show_message_additional_content(message)
+        show_message_additional_content(message, autoplay=True)
         st.session_state.messages.append(message)
         storage.dump_conversation(
             prompt,
@@ -130,12 +134,13 @@ def answer(
             st.session_state.conversation_dir,
         )
 
+
 def get_voice_order(voice: Voice):
     if voice.provider == "gtts":
         return ""
     else:
         return voice.provider + voice.name
-        
+
 
 def settings_panel():
     prompt_cont, options_cont, options_2_cont, action_cont = st.columns([4, 1, 1, 1])
@@ -185,7 +190,7 @@ def main():
         st.write("Conversation")
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+                st.markdown(message["content"], help=message.get("think"))
                 show_message_additional_content(message)
         if (
             st.session_state.messages
