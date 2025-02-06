@@ -17,7 +17,10 @@ st.set_page_config(page_title="Viet chat", layout="wide")
 langs = ["vi", "en", "fr"]
 depths = [1, 2, 3, 4]
 default_prompt = """You are a vietnamese speaker making a conversation with a friend in vietnamese.
-You will try to answer with no more than 2 sentences."""
+Only if you find some vocabulary mistake in what your friend say, you will fix it. 
+Then you will try to answer with no more than 2 sentences.
+You will either be precise or ask your speaker for missing information if any.
+"""
 
 if "settings" not in st.session_state:
     st.session_state.settings = Settings()
