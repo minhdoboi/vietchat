@@ -16,7 +16,7 @@ class GroqText:
         return parse_groq_stream(self.client.chat.completions.create(
             model=self.settings.llm,
             messages=messages,
-            stream=True,
+            stream=False,
         ))
     
 def parse_groq_stream(stream):

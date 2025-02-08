@@ -17,12 +17,12 @@ st.set_page_config(page_title="Viet chat", layout="wide")
 langs = ["vi", "en", "fr"]
 depths = [1, 2, 3, 4]
 default_prompt = """You are a vietnamese speaker making a conversation with a friend in vietnamese.
-Only if you find some vocabulary mistake in what your friend say, you will fix it. 
-Then you will try to answer with no more than 2 sentences.
-You will either be precise or ask your speaker for missing information if any.
+If you think there is an ambiguity with what your friend says, for exemple, if it doesn't fit the conversation, 
+you may reword what it says with your words ands ask to confirm that you understand correctly.
+If there is not ambiguity you will try to answer with no more than 2 sentences.
 """
 
-if "settings" not in st.session_state:
+if "settings" not in st.session_state:  
     st.session_state.settings = Settings()
 
 if "messages" not in st.session_state:
@@ -68,13 +68,31 @@ def load_conversation_dialog():
         st.session_state.select_lang = conversation_content.get("language")
         st.rerun()
 
+def show_message(message):
+    content = message["content"]
+    st.markdown(content)
 
 def show_message_additional_content(message, autoplay=False):
-    if "translation" in message:
-        with st.expander("translation"):
-            st.markdown(f"Translation: {message['translation']}")
-    if "audio" in message:
-        st.audio(f"{st.session_state.conversation_dir}/{message["audio"]}", autoplay=autoplay)
+    fields = [field for field in ["audio", "translation", "think", "user_reformulation"] if field in message]
+    if fields:
+        tabs = st.tabs(fields)
+        tab_fields = dict(zip(fields, tabs))
+        if "user_reformulation" in message:
+            with tab_fields["user_reformulation"]:
+                st.markdown(message['user_reformulation'])
+        if "think" in message:
+            with tab_fields["think"]:
+                if isinstance(message['think'], list):
+                    for think in message['think']:
+                        st.markdown(think)
+                else:
+                    st.markdown(message['think'])
+        if "translation" in message:
+            with tab_fields["translation"]:
+                st.markdown(message['translation'])
+        if "audio" in message:
+            with tab_fields["audio"]:
+                st.audio(f"{st.session_state.conversation_dir}/{message["audio"]}", autoplay=autoplay)
 
 
 def get_message_prompt(prompt, settings: Settings):
@@ -84,7 +102,7 @@ def get_message_prompt(prompt, settings: Settings):
             "content": [
                 {
                     "type": "text",
-                    "text": prompt,
+                    "text": prompt + "You will also add one reformulation of the last user message.",
                 }
             ],
         }
@@ -104,8 +122,29 @@ def answer(
             for m in st.session_state.messages[-depth:]
         ]
         logger.info("context %s", context)
-        stream = ai_provider.text.get_completions_stream(context)
-        think, response = utils.extract_think(st.write_stream(stream))
+
+        streaming = False
+        response = ai_provider.text.get_completions_stream(context, stream=streaming)
+        if settings.main_provider == "openai":
+            logger.info("response %s", response)
+            think = response["reasoning_steps"]
+            user_reformulation = response["user_reformulation"]
+            response = response["answer"]
+        else:
+            user_reformulation = None
+            if streaming:
+                think, response = utils.extract_think(st.write_stream(response))
+            else:
+                think, response = utils.extract_think(response)
+        
+        message = {
+            "id": st.session_state.message_id,
+            "role": "assistant",
+            "content": response,
+            "think": think,
+            "user_reformulation": user_reformulation,
+        }
+        show_message(message)
         translation = asyncio.run(
             translate_text(
                 response,
@@ -119,14 +158,8 @@ def answer(
         ai_provider.tts[voice.provider].text_to_speech(
             response, audio_file_path, voice_id=voice.id, lang=language
         )
-        message = {
-            "id": st.session_state.message_id,
-            "role": "assistant",
-            "content": response,
-            "translation": translation,
-            "audio": audio_file,
-            "think": think,
-        }
+        message["translation"] = translation
+        message["audio"]= audio_file
         show_message_additional_content(message, autoplay=True)
         st.session_state.messages.append(message)
         storage.dump_conversation(
@@ -161,7 +194,7 @@ def settings_panel():
         user_voice_context = st.selectbox(
             "user voice context", ["prompt", "first message", "last message"]
         )
-        depth = st.selectbox("context depth", [1, 2, 3, 4], index=1)
+        depth = st.selectbox("context depth", [1, 2, 3, 4], index=2)
     with action_cont:
         if st.button("New conversation"):
             st.session_state.message_id = 0
@@ -193,7 +226,7 @@ def main():
         st.write("Conversation")
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
-                st.markdown(message["content"], help=message.get("think"))
+                show_message(message)
                 show_message_additional_content(message)
         if (
             st.session_state.messages

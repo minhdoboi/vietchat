@@ -20,23 +20,23 @@ class AIProvider:
     def __init__(self, settings: Settings):
         self.add_phoenix_trace(settings)
         logger.info("provider founds %s", list(settings.provider_settings.keys()))
-        clients = {
+        self.clients = {
             provider: self.new_client(provider, provider_settings.api_key)
             for provider, provider_settings in settings.provider_settings.items()
             if provider_settings.api_key
         }
-        logger.info("client founds %s", list(clients.keys()))
+        logger.info("client founds %s", list(self.clients.keys()))
         self.tts = {
             provider: tts
             for provider, tts in [
-                (provider, self.new_tts(provider, clients, provider_settings))
+                (provider, self.new_tts(provider, self.clients, provider_settings))
                 for provider, provider_settings in settings.provider_settings.items()
             ]
             if tts
         }
         logger.info("tts founds %s", list(self.tts.keys()))
         self.tts_voices = self.get_tts_voices()
-        self.client = clients[settings.main_provider]
+        self.client = self.clients[settings.main_provider]
         provider_settings = settings.provider_settings[settings.main_provider]
 
         if settings.main_provider == "groq":
